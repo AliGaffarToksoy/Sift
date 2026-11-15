@@ -18,6 +18,7 @@ final class MailboxModel {
     var error: String?
     var accountErrors: [String: String] = [:]
     var syncing = false
+    var now = Date.now
     var busy: Set<UUID> = []
     var authorization: DeviceAuthorization?
     var connecting = false
@@ -45,7 +46,7 @@ final class MailboxModel {
         } catch { self.error = "Yerel veriler okunamadı; üzerine yazılmayacak. \(error.localizedDescription)" }
     }
     var messages: [MailMessage] {
-        let list = demo ? demoMessages : cache.mail.filter { $0.snoozedUntil == nil || ($0.snoozedUntil ?? .distantPast) <= .now }.map(\.message)
+        let list = demo ? demoMessages : cache.mail.filter { $0.snoozedUntil == nil || ($0.snoozedUntil ?? .distantPast) <= now }.map(\.message)
         return list.sorted { $0.score == $1.score ? $0.receivedAt > $1.receivedAt : $0.score > $1.score }
     }
     var selectedMessage: MailMessage? { visibleMessages.first { $0.id == selectedID } }
@@ -57,7 +58,7 @@ final class MailboxModel {
         case "Newsletters": list = list.filter(\.isMailingList)
         case "Today": list = list.filter { Calendar.current.isDateInToday($0.receivedAt) }
         case "VIP": list = list.filter { cache.preferences.vipAddresses.contains($0.address.lowercased()) }
-        case "Snoozed": list = demo ? [] : cache.mail.filter { ($0.snoozedUntil ?? .distantPast) > .now }.map(\.message)
+        case "Snoozed": list = demo ? [] : cache.mail.filter { ($0.snoozedUntil ?? .distantPast) > now }.map(\.message)
         default: break
         }
         return list.filter { query.isEmpty || ($0.sender + " " + $0.subject + " " + $0.preview).localizedCaseInsensitiveContains(query) }
@@ -67,6 +68,7 @@ final class MailboxModel {
         notch = NotchController(model: self)
         polling = Task { [weak self] in
             while !Task.isCancelled {
+                self?.now = .now
                 await self?.sync()
                 do { try await Task.sleep(for: .seconds(60)) } catch { break }
             }
@@ -198,7 +200,7 @@ final class MailboxModel {
     func openMessage(_ message: MailMessage) {
         activeMailbox = "All"; select(message)
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first(where: { $0.identifier?.rawValue == "mail" || ($0.canBecomeMain && !($0 is NSPanel)) })?.makeKeyAndOrderFront(nil)
+        NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("mail-") == true || $0.title == "Sift" })?.makeKeyAndOrderFront(nil)
         notch?.hide()
     }
     func reply(_ message: MailMessage) { openMessage(message); replyText = ""; replyMessage = message }

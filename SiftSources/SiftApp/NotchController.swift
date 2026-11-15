@@ -66,9 +66,9 @@ final class NotchPresentation {
             cameraWidth = max(0, right.minX - left.maxX)
         }
     }
-    func notify(_ messages: [MailMessage], preview: Bool = false) {
+    func notify(_ messages: [MailMessage], preview: Bool = false, userInitiated: Bool = false) {
         guard !messages.isEmpty, let model else { return }
-        if !preview {
+        if !preview && !userInitiated {
             guard model.cache.preferences.permitsAlert(at: .now), INFocusStatusCenter.default.focusStatus.isFocused != true else { return }
         }
         let combined = visible && !state.preview && !preview ? state.messages + messages : messages
@@ -102,7 +102,7 @@ final class NotchPresentation {
         if visible { hide() }
         else if let model {
             let messages = model.messages.filter { $0.tier >= model.cache.preferences.minimumTier }
-            notify(Array(messages.prefix(4)), preview: true); expand()
+            notify(Array(messages.prefix(4)), preview: model.demo, userInitiated: true); expand()
         }
     }
     private func scheduleHide() {
