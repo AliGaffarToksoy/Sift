@@ -15,6 +15,9 @@ done
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set CFBundleVersion ${GITHUB_RUN_NUMBER:-1}" "$APP/Contents/Info.plist"
+if [ -n "${MICROSOFT_CLIENT_ID:-}" ]; then
+    /usr/libexec/PlistBuddy -c "Add SiftMicrosoftClientID string $MICROSOFT_CLIENT_ID" "$APP/Contents/Info.plist"
+fi
 codesign --force --deep --sign - --entitlements Resources/Sift.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
 ditto -c -k --sequesterRsrc --keepParent "$APP" dist/Sift-macOS-arm64.zip

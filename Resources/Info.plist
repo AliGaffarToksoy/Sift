@@ -12,6 +12,8 @@
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>NSPrefersDisplaySafeAreaCompatibilityMode</key><false/>
+  <key>NSFocusStatusUsageDescription</key><string>Odak açıkken önemli posta bildirimlerini sessize almak için.</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

@@ -11,3 +11,5 @@ Secrets.swift
 GoogleService-Info.plist
 *.p8
 *.p12
+
+dist/

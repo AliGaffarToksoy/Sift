@@ -4,15 +4,23 @@ import SiftCore
 
 @main
 struct SiftApp: App {
-    @State private var model = MailboxModel()
+    private let model = MailboxModel()
 
     var body: some Scene {
-        WindowGroup("Sift") {
+        WindowGroup("Sift", id: "mail") {
             MailWindow()
                 .environment(model)
                 .frame(minWidth: 1040, minHeight: 680)
+                .task { model.start() }
         }
         .windowToolbarStyle(.unified)
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Eşitle") { Task { await model.sync() } }.keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Çentik önizlemesi") { model.previewNotch() }.keyboardShortcut("n", modifiers: [.command, .shift])
+            }
+        }
+        Settings { SiftSettings().environment(model) }
 
         MenuBarExtra {
             MenuBarPeek().environment(model)
@@ -23,33 +31,7 @@ struct SiftApp: App {
     }
 }
 
-@Observable @MainActor
-final class MailboxModel {
-    var messages = DemoMailbox.messages()
-    var selectedID: UUID?
-    var query = ""
-    var activeMailbox = "Priority"
-    var showGallery = false
-
-    var selectedMessage: MailMessage? { messages.first { $0.id == selectedID } }
-    var visibleMessages: [MailMessage] {
-        let matching = messages.filter { query.isEmpty || ($0.sender + $0.subject + $0.preview).localizedCaseInsensitiveContains(query) }
-        switch activeMailbox {
-        case "Needs Reply": return matching.filter { $0.containsQuestion || $0.isReplyToMe }
-        case "Newsletters": return matching.filter(\.isMailingList)
-        case "Today": return matching.filter { $0.tier >= .important }
-        default: return matching
-        }
-    }
-
-    init() { selectedID = messages.first?.id }
-
-    func archive(_ message: MailMessage) {
-        withAnimation(.snappy(duration: 0.28)) { messages.removeAll { $0.id == message.id }; selectedID = visibleMessages.first?.id }
-    }
-}
-
-private enum SiftPalette {
+enum SiftPalette {
     static func accent(for tier: PriorityTier) -> Color {
         switch tier {
         case .critical: .red
@@ -63,7 +45,6 @@ private enum SiftPalette {
 
 struct MailWindow: View {
     @Environment(MailboxModel.self) private var model
-    @State private var selection: UUID?
 
     var body: some View {
         @Bindable var model = model
@@ -74,43 +55,73 @@ struct MailWindow: View {
             messageList
                 .navigationSplitViewColumnWidth(min: 330, ideal: 410, max: 520)
         } detail: {
-            if let message = model.selectedMessage { ReaderView(message: message) }
+            if !model.demo && model.cache.accounts.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "tray.2.fill").font(.system(size: 56)).foregroundStyle(.orange.gradient)
+                    Text("Gürültü azalsın. Önemli olan kalsın.").font(.title.weight(.semibold))
+                    Text("Outlook hesabını bağla. Sift önemli postalarını bu Mac’te sıralasın,\nçentik yalnızca dikkatini hak edenler için açılsın.")
+                        .multilineTextAlignment(.center).foregroundStyle(.secondary)
+                    Button("Microsoft hesabı bağla") { model.showAccounts = true }.buttonStyle(.glassProminent)
+                    Button("Örnek postalarla keşfet") { model.useDemo(true) }.buttonStyle(.plain)
+                    Label("Yerel önbellek · Anahtar Zinciri · Takip görseli yok", systemImage: "lock.shield").font(.caption).foregroundStyle(.secondary)
+                }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            else if let message = model.selectedMessage { ReaderView(message: message) }
             else { ContentUnavailableView("Inbox zero", systemImage: "checkmark.circle", description: Text("You’re all caught up.")) }
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                Button { Task { await model.sync() } } label: { Label("Eşitle", systemImage: "arrow.triangle.2.circlepath") }.disabled(model.syncing || model.demo)
+                Button { model.showBrief = true } label: { Label("Günün özeti", systemImage: "sun.max") }
+                Button { model.previewNotch() } label: { Label("Çentik önizlemesi", systemImage: "bell.badge") }
+                SettingsLink { Image(systemName: "gearshape") }
                 Button { model.showGallery.toggle() } label: { Image(systemName: "square.grid.2x2") }
                     .help("Design Gallery")
                 Button { if let message = model.selectedMessage { model.archive(message) } } label: {
-                    Label("Archive", systemImage: "archivebox")
-                }.keyboardShortcut("e", modifiers: [.command])
+                    Label("Arşivle", systemImage: "archivebox")
+                }.keyboardShortcut("e", modifiers: [.command]).disabled(model.selectedMessage == nil || model.syncing || !model.busy.isEmpty)
             }
         }
-        .searchable(text: $model.query, placement: .toolbar, prompt: "Search messages")
+        .searchable(text: $model.query, placement: .toolbar, prompt: "Postalarda ara")
         .sheet(isPresented: $model.showGallery) { DesignGallery() }
+        .sheet(isPresented: $model.showAccounts) {
+            VStack { HStack { Text("Hesaplar").font(.title2.weight(.semibold)); Spacer(); Button("Bitti") { model.showAccounts = false } }.padding(); AccountSettings() }.frame(width: 640, height: 620)
+        }
+        .sheet(isPresented: $model.showBrief) { DailyBrief() }
+        .sheet(item: $model.replyMessage) { ReplyComposer(message: $0) }
+        .safeAreaInset(edge: .bottom) {
+            if let error = model.error, !model.showAccounts {
+                HStack { Image(systemName: "exclamationmark.triangle"); Text(error).font(.caption); Spacer(); Button("Kapat") { model.error = nil } }.padding(12).background(.orange.opacity(0.12))
+            }
+        }
         .onChange(of: model.activeMailbox) { _, _ in model.selectedID = model.visibleMessages.first?.id }
     }
 
     private var sidebar: some View {
         List {
-            Section("Smart Mailboxes") {
+            Section("Akıllı posta kutuları") {
+                mailbox("All", symbol: "tray.full")
                 mailbox("Priority", symbol: "sparkles", count: model.messages.filter { $0.tier >= .important }.count)
                 mailbox("Today", symbol: "sun.max")
                 mailbox("Needs Reply", symbol: "arrowshape.turn.up.left")
                 mailbox("Newsletters", symbol: "newspaper")
+                mailbox("Snoozed", symbol: "clock")
+                mailbox("VIP", symbol: "star")
             }
-            Section("Accounts") {
-                Label("Demo Inbox", systemImage: "tray.full")
-                Button { } label: { Label("Add account…", systemImage: "plus.circle") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
+            Section("Hesaplar") {
+                if model.demo { Label("Örnek posta kutusu", systemImage: "tray.full") }
+                ForEach(model.cache.accounts) { account in
+                    Button { model.showAccounts = true } label: { Label(account.address, systemImage: model.accountErrors[account.id] == nil ? "envelope" : "exclamationmark.triangle") }.buttonStyle(.plain)
+                }
+                Button { model.showAccounts = true } label: { Label("Hesap ekle…", systemImage: "plus.circle") }.buttonStyle(.plain)
             }
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 8) {
-                Circle().fill(.green).frame(width: 7, height: 7)
-                Text("Demo Mode").font(.caption).foregroundStyle(.secondary)
+                Circle().fill(model.accountErrors.isEmpty ? .green : .orange).frame(width: 7, height: 7)
+                Text(model.demo ? "Demo · Örnek postalar" : model.syncing ? "Eşitleniyor…" : model.status).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.tertiary)
             }.padding(16)
@@ -121,7 +132,7 @@ struct MailWindow: View {
         Button { model.activeMailbox = title } label: {
             HStack(spacing: 9) {
                 Image(systemName: symbol).foregroundStyle(title == "Priority" ? .orange : .secondary).frame(width: 18)
-                Text(title)
+                Text(mailboxTitle(title))
                 Spacer(minLength: 4)
                 if let count, count > 0 { Text("\(count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
             }.contentShape(Rectangle())
@@ -133,8 +144,8 @@ struct MailWindow: View {
         return VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(model.activeMailbox).font(.title2.weight(.semibold))
-                    Text("Sorted by what matters").font(.caption).foregroundStyle(.secondary)
+                    Text(mailboxTitle(model.activeMailbox)).font(.title2.weight(.semibold))
+                    Text(model.activeMailbox == "Snoozed" ? "Bu Mac’te ertelenenler" : "Önem sırasına göre").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text("\(model.visibleMessages.count)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
@@ -145,9 +156,9 @@ struct MailWindow: View {
                 ScrollView {
                     LazyVStack(spacing: 1) {
                         ForEach(model.visibleMessages) { message in
-                            MessageRow(message: message, selected: model.selectedID == message.id)
-                                .contentShape(Rectangle())
-                                .onTapGesture { withAnimation(.snappy(duration: 0.24)) { model.selectedID = message.id } }
+                            Button { model.select(message) } label: { MessageRow(message: message, selected: model.selectedID == message.id) }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("\(message.sender), \(message.subject), \(message.tier.title)")
                         }
                     }.padding(.horizontal, 8).padding(.bottom, 24)
                 }
@@ -202,9 +213,12 @@ struct ReaderView: View {
                     .font(.caption.weight(.semibold)).foregroundStyle(SiftPalette.accent(for: message.tier))
                 Text(message.explanation).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button { model.archive(message) } label: { Label("Archive", systemImage: "archivebox") }
+                Button { model.archive(message) } label: { Label("Arşivle", systemImage: "archivebox") }
                     .buttonStyle(.bordered).keyboardShortcut("e", modifiers: [.command])
-                Button { } label: { Image(systemName: "ellipsis") }.buttonStyle(.bordered)
+                Menu {
+                    Button("Göndereni VIP yap") { model.prefer(message) }
+                    Button("Göndereni sessize al") { model.prefer(message, mute: true) }
+                } label: { Image(systemName: "ellipsis") }
             }.padding(.horizontal, 28).padding(.vertical, 18)
             Divider()
             ScrollView {
@@ -224,7 +238,7 @@ struct ReaderView: View {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "sparkle").foregroundStyle(.orange)
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("Sift summary").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text("Kısa önizleme · Bu Mac’te").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             Text(message.summary).font(.callout)
                         }
                     }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -232,9 +246,9 @@ struct ReaderView: View {
                     Text(message.body).font(.body).lineSpacing(6).textSelection(.enabled)
                     Spacer(minLength: 40)
                     HStack {
-                        Button { } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }.buttonStyle(.borderedProminent).keyboardShortcut("r", modifiers: [.command])
-                        Button { } label: { Label("Snooze", systemImage: "clock") }.buttonStyle(.bordered)
-                        Button { } label: { Label("More like this", systemImage: "hand.thumbsup") }.buttonStyle(.bordered)
+                        Button { model.reply(message) } label: { Label("Yanıtla", systemImage: "arrowshape.turn.up.left") }.buttonStyle(.borderedProminent).keyboardShortcut("r", modifiers: [.command])
+                        Button { model.snooze(message) } label: { Label(model.activeMailbox == "Snoozed" ? "Ertelemeyi kaldır" : "1 saat ertele", systemImage: "clock") }.buttonStyle(.bordered)
+                        Button { model.prefer(message) } label: { Label("VIP yap", systemImage: "star") }.buttonStyle(.bordered)
                     }
                 }.padding(32).frame(maxWidth: 760, alignment: .leading).frame(maxWidth: .infinity, alignment: .topLeading)
             }.scrollEdgeEffectStyle(.soft, for: .top)
@@ -260,7 +274,7 @@ struct DesignGallery: View {
                 .padding(8).background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             Text("Floating controls").font(.title3.weight(.semibold))
             HStack(spacing: 10) {
-                Button {} label: { Label("Archive", systemImage: "archivebox") }.buttonStyle(.glass)
+                Button {} label: { Label("Arşivle", systemImage: "archivebox") }.buttonStyle(.glass)
                 Button {} label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }.buttonStyle(.glassProminent)
                 Label("⌘ E", systemImage: "keyboard").font(.caption).foregroundStyle(.secondary)
             }
@@ -270,6 +284,7 @@ struct DesignGallery: View {
 }
 
 struct MenuBarPeek: View {
+    @Environment(\.openWindow) private var openWindow
     @Environment(MailboxModel.self) private var model
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -281,7 +296,24 @@ struct MenuBarPeek: View {
                 }
             }
             Divider()
-            Text("Demo Mode · Local only").font(.caption2).foregroundStyle(.tertiary)
+            Text(model.demo ? "Demo · Örnek postalar" : "Outlook · Yerel önbellek").font(.caption2).foregroundStyle(.tertiary)
+            Button("Sift’i aç") { openWindow(id: "mail"); NSApp.activate(ignoringOtherApps: true) }.buttonStyle(.glassProminent)
+            Button(model.cache.preferences.paused ? "Bildirimleri sürdür" : "Bildirimleri duraklat") {
+                model.cache.preferences.paused.toggle(); model.save()
+                if model.cache.preferences.paused { model.notch?.hide() }
+            }.font(.caption)
         }.padding(14).frame(width: 270)
+    }
+}
+
+func mailboxTitle(_ key: String) -> String {
+    switch key {
+    case "All": "Gelen kutusu"
+    case "Priority": "Önemli"
+    case "Today": "Bugün"
+    case "Needs Reply": "Yanıt bekleyenler"
+    case "Newsletters": "Bültenler"
+    case "Snoozed": "Ertelenenler"
+    default: key
     }
 }

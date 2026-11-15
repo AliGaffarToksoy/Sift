@@ -29,8 +29,8 @@ jobs:
           exit "$result"
       - name: Build and package app
         id: package
-        if: always()
         env:
+          MICROSOFT_CLIENT_ID: ${{ vars.MICROSOFT_CLIENT_ID }}
           VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('0.1.{0}', github.run_number) }}
         run: |
           set +e
@@ -40,7 +40,7 @@ jobs:
           python3 Scripts/ci-annotations.py /tmp/sift-package.log "Package build"
           exit "$result"
       - uses: actions/upload-artifact@v4
-        if: always() && steps.package.outcome == 'success'
+        if: success() && steps.package.outcome == 'success'
         with:
           name: Sift-macOS-arm64-${{ github.sha }}
           path: |

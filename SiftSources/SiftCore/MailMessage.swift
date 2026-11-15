@@ -17,7 +17,7 @@ public enum PriorityTier: Int, CaseIterable, Codable, Sendable, Comparable {
 }
 
 public struct MailMessage: Identifiable, Codable, Hashable, Sendable {
-    public let id: UUID
+    public var id: UUID
     public var sender: String
     public var address: String
     public var subject: String
@@ -58,14 +58,14 @@ public struct PriorityScorer: Sendable {
         var result = message
         var points = 0
         var reasons: [String] = []
-        if vipAddresses.contains(message.address.lowercased()) { points += 42; reasons.append("Pinned sender") }
+        if Set(vipAddresses.map { $0.lowercased() }).contains(message.address.lowercased()) { points += 42; reasons.append("Pinned sender") }
         if message.isDirect { points += 12; reasons.append("Sent directly to you") }
         if message.isReplyToMe { points += 28; reasons.append("Reply to a thread you started") }
         if message.containsQuestion { points += 15; reasons.append("Asks you a question") }
         if message.containsDeadline { points += 24; reasons.append("Mentions a deadline or date") }
         if message.isMailingList { points -= 25; reasons.append("Mailing list") }
         if message.isNoReply { points -= 18; reasons.append("Automated sender") }
-        if message.subject.localizedCaseInsensitiveContains("security") || message.subject.localizedCaseInsensitiveContains("verification") {
+        if ["security", "verification", "güvenlik", "doğrulama"].contains(where: { message.subject.localizedCaseInsensitiveContains($0) }) {
             points += 25; reasons.append("Security or verification message")
         }
         result.score = min(100, max(0, points))
