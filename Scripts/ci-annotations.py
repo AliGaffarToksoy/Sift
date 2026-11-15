@@ -4,7 +4,7 @@ import re
 import sys
 
 path, title = sys.argv[1:3]
-patterns = re.compile(r"(?i)(error:|failed|assertion|test case|xctassert)")
+patterns = re.compile(r"(?i)(error:|failed|assertion|xctassert)")
 count = 0
 with open(path, encoding="utf-8", errors="replace") as log:
     for line in log:

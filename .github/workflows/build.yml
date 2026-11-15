@@ -25,7 +25,7 @@ jobs:
           swift test > /tmp/sift-test.log 2>&1
           result=$?
           cat /tmp/sift-test.log
-          python3 Scripts/ci-annotations.py /tmp/sift-test.log "Unit tests"
+          if [ "$result" -ne 0 ]; then python3 Scripts/ci-annotations.py /tmp/sift-test.log "Unit tests"; fi
           exit "$result"
       - name: Build and package app
         id: package
@@ -37,7 +37,7 @@ jobs:
           bash Scripts/package.sh > /tmp/sift-package.log 2>&1
           result=$?
           cat /tmp/sift-package.log
-          python3 Scripts/ci-annotations.py /tmp/sift-package.log "Package build"
+          if [ "$result" -ne 0 ]; then python3 Scripts/ci-annotations.py /tmp/sift-package.log "Package build"; fi
           exit "$result"
       - uses: actions/upload-artifact@v4
         if: success() && steps.package.outcome == 'success'
