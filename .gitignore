@@ -1,0 +1,13 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+*.dSYM
+*.app
+*.dmg
+*.zip
+Secrets.swift
+GoogleService-Info.plist
+*.p8
+*.p12

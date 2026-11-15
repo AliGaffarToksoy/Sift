@@ -1,0 +1,51 @@
+name: Build and package Sift
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-and-package:
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify toolchain
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          swift --version
+      - name: Unit tests
+        run: swift test
+      - name: Build and package app
+        env:
+          VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('0.1.{0}', github.run_number) }}
+        run: bash Scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sift-macOS-arm64-${{ github.sha }}
+          path: |
+            dist/Sift-macOS-arm64.zip
+            dist/Sift-macOS-arm64.dmg
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test-and-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Sift-macOS-arm64-${{ github.sha }}
+          path: dist
+      - name: Publish downloadable build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/Sift-macOS-arm64.zip dist/Sift-macOS-arm64.dmg dist/SHA256SUMS.txt --target "$GITHUB_SHA" --title "Sift $TAG" --notes "Apple Silicon · macOS 26+. Drag Sift.app to Applications. No Xcode needed. Ad-hoc signed, not Apple-notarized; approve first launch in System Settings → Privacy & Security."
