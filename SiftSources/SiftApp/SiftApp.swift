@@ -130,7 +130,7 @@ struct MailWindow: View {
 
     private var messageList: some View {
         @Bindable var model = model
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(model.activeMailbox).font(.title2.weight(.semibold))
