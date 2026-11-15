@@ -19,13 +19,26 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Unit tests
-        run: swift test
+        id: tests
+        run: |
+          set +e
+          swift test > /tmp/sift-test.log 2>&1
+          result=$?
+          cat /tmp/sift-test.log
+          python3 Scripts/ci-annotations.py /tmp/sift-test.log "Unit tests"
+          exit "$result"
       - name: Build and package app
         id: package
         if: always()
         env:
           VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('0.1.{0}', github.run_number) }}
-        run: bash Scripts/package.sh
+        run: |
+          set +e
+          bash Scripts/package.sh > /tmp/sift-package.log 2>&1
+          result=$?
+          cat /tmp/sift-package.log
+          python3 Scripts/ci-annotations.py /tmp/sift-package.log "Package build"
+          exit "$result"
       - uses: actions/upload-artifact@v4
         if: always() && steps.package.outcome == 'success'
         with:
