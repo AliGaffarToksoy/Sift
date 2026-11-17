@@ -29,12 +29,13 @@ final class NotchPresentation {
     private var hotkey: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private var screen: NSScreen?
-    private var cameraWidth: CGFloat = 180
+    private var camera: CGRect?
     private var visible = false
     private var hovering = false
     init(model: MailboxModel) {
         self.model = model
         panel = MailPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.title = "Sift · Çentik"
         panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = false
         panel.level = .statusBar; panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -62,8 +63,10 @@ final class NotchPresentation {
         screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen else { return }
         state.topInset = screen.safeAreaInsets.top; state.hardware = state.topInset > 0
-        if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
-            cameraWidth = max(0, right.minX - left.maxX)
+        camera = nil
+        if state.hardware, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea, right.minX > left.maxX {
+            camera = CGRect(x: left.maxX, y: screen.frame.maxY - state.topInset,
+                            width: right.minX - left.maxX, height: state.topInset)
         }
     }
     func notify(_ messages: [MailMessage], preview: Bool = false, userInitiated: Bool = false) {
@@ -74,18 +77,19 @@ final class NotchPresentation {
         let combined = visible && !state.preview && !preview ? state.messages + messages : messages
         var ids: Set<UUID> = []
         state.messages = combined.filter { ids.insert($0.id).inserted }.sorted { $0.score > $1.score }
-        state.preview = preview; state.expanded = false
+        let keepExpanded = visible && hovering && state.expanded && !preview
+        state.preview = preview; state.expanded = keepExpanded
         geometry()
         if !visible, let screen {
-            let width = state.hardware ? cameraWidth : 200
-            panel.setFrame(NSRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - max(1, state.topInset), width: width, height: max(1, state.topInset)), display: false)
+            let width = state.hardware ? (camera?.width ?? 180) : 200
+            panel.setFrame(NSRect(x: (camera?.midX ?? screen.frame.midX) - width / 2, y: screen.frame.maxY - max(1, state.topInset), width: width, height: max(1, state.topInset)), display: false)
         }
         visible = true; panel.ignoresMouseEvents = false
         panel.orderFrontRegardless(); resize(animated: true); scheduleHide()
     }
     func remove(_ id: UUID) {
         state.messages.removeAll { $0.id == id }
-        if state.messages.isEmpty { hide() }
+        if state.messages.isEmpty { hide() } else { resize(animated: true) }
     }
     func hide() {
         timer?.cancel(); visible = false; hovering = false
@@ -116,10 +120,10 @@ final class NotchPresentation {
     }
     private func resize(animated: Bool) {
         guard visible, let screen else { return }
-        let width = min(max(state.expanded ? 560 : 460, cameraWidth + 100), screen.frame.width - 32)
-        let height = state.topInset + (state.expanded ? 322.0 : 142.0)
-        let y = state.hardware ? screen.frame.maxY - height : screen.visibleFrame.maxY - height - 8
-        let frame = NSRect(x: screen.frame.midX - width / 2, y: y, width: width, height: height)
+        let frame = NotchLayout.frame(screen: screen.frame, visible: screen.visibleFrame,
+                                      topInset: state.topInset, camera: camera,
+                                      expanded: state.expanded, additionalMessages: state.messages.count - 1,
+                                      preview: state.preview)
         if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.28; context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.85, 0.25, 1)
@@ -190,10 +194,10 @@ private struct NotchView: View {
                 if state.expanded {
                     GlassEffectContainer(spacing: 8) {
                         HStack(spacing: 8) {
-                            Button { model.archive(message) } label: { Image(systemName: "archivebox") }.help("Arşivle")
-                            Button { model.reply(message) } label: { Image(systemName: "arrowshape.turn.up.left") }.help("Yanıtla")
-                            Button { model.snooze(message) } label: { Image(systemName: "clock") }.help("1 saat ertele")
-                            Button { model.prefer(message, mute: true) } label: { Image(systemName: "bell.slash") }.help("Göndereni sessize al")
+                            Button { model.archive(message) } label: { Image(systemName: "archivebox") }.help("Arşivle").accessibilityLabel("Arşivle")
+                            Button { model.reply(message) } label: { Image(systemName: "arrowshape.turn.up.left") }.help("Yanıtla").accessibilityLabel("Yanıtla")
+                            Button { model.snooze(message) } label: { Image(systemName: "clock") }.help("1 saat ertele").accessibilityLabel("1 saat ertele")
+                            Button { model.prefer(message, mute: true) } label: { Image(systemName: "bell.slash") }.help("Göndereni sessize al").accessibilityLabel("Göndereni sessize al")
                             Spacer()
                             Button("Sift’te aç") { model.openMessage(message) }
                         }.buttonStyle(.glass).disabled(state.preview || model.syncing || model.busy.contains(message.id))
