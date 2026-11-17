@@ -3,6 +3,24 @@ import XCTest
 @testable import SiftCore
 
 final class NotchLayoutTests: XCTestCase {
+    func testHoverTargetIncludesCameraAndItsLowerEdge() {
+        let screen = CGRect(x: -1512, y: 100, width: 1512, height: 982)
+        let camera = CGRect(x: -870, y: 1050, width: 180, height: 32)
+        let target = NotchLayout.activationFrame(screen: screen, visible: screen, topInset: 32, camera: camera)
+        XCTAssertTrue(target.contains(CGPoint(x: camera.midX, y: camera.midY)))
+        XCTAssertTrue(target.contains(CGPoint(x: camera.midX, y: camera.minY - 4)))
+        XCTAssertFalse(target.contains(CGPoint(x: screen.minX + 40, y: screen.maxY - 4)))
+        XCTAssertEqual(target.maxY, screen.maxY)
+    }
+    func testExternalHoverTargetIgnoresAnotherDisplaysCamera() {
+        let screen = CGRect(x: 1512, y: 0, width: 1920, height: 1080)
+        let visible = CGRect(x: 1512, y: 0, width: 1920, height: 1055)
+        let target = NotchLayout.activationFrame(screen: screen, visible: visible, topInset: 0,
+            camera: CGRect(x: 0, y: 0, width: 180, height: 32))
+        XCTAssertEqual(target.midX, screen.midX)
+        XCTAssertEqual(target.maxY, visible.maxY)
+    }
+
     func testHardwarePanelIsAnchoredToCameraAndScreenTop() {
         let screen = CGRect(x: -1512, y: 100, width: 1512, height: 982)
         let visible = CGRect(x: -1512, y: 100, width: 1512, height: 950)

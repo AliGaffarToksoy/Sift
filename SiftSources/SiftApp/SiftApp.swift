@@ -67,7 +67,7 @@ struct MailWindow: View {
                 }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             else if let message = model.selectedMessage { ReaderView(message: message) }
-            else { ContentUnavailableView("Inbox zero", systemImage: "checkmark.circle", description: Text("You’re all caught up.")) }
+            else { ContentUnavailableView("Gelen kutun temiz", systemImage: "checkmark.circle", description: Text("Şu anda bekleyen bir posta yok.")) }
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
@@ -151,7 +151,7 @@ struct MailWindow: View {
                 Text("\(model.visibleMessages.count)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
             }.padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
             if model.visibleMessages.isEmpty {
-                ContentUnavailableView("All clear", systemImage: "checkmark.circle", description: Text("Nothing needs your attention here."))
+                ContentUnavailableView("Her şey sakin", systemImage: "checkmark.circle", description: Text("Burada dikkatini bekleyen bir posta yok."))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 1) {

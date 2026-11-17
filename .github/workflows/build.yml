@@ -31,7 +31,7 @@ jobs:
         id: package
         env:
           MICROSOFT_CLIENT_ID: ${{ vars.MICROSOFT_CLIENT_ID }}
-          VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('0.1.{0}', github.run_number) }}
+          VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
           set +e
           bash Scripts/package.sh > /tmp/sift-package.log 2>&1

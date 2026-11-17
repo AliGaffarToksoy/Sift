@@ -3,6 +3,14 @@ import Foundation
 
 /// Screen coordinates remain global: displays can have negative origins and different menu-bar heights.
 public enum NotchLayout {
+    public static func activationFrame(screen: CGRect, visible: CGRect, topInset: CGFloat, camera: CGRect?) -> CGRect {
+        let hardware = topInset > 0
+        let width = hardware ? max(120, camera?.width ?? 180) + 16 : 180
+        let top = hardware ? screen.maxY : visible.maxY
+        return CGRect(x: (hardware ? camera?.midX ?? screen.midX : screen.midX) - width / 2,
+                      y: top - max(12, topInset + 6), width: width, height: max(12, topInset + 6))
+    }
+
     public static func frame(screen: CGRect, visible: CGRect, topInset: CGFloat,
                              camera: CGRect?, expanded: Bool, additionalMessages: Int,
                              preview: Bool) -> CGRect {

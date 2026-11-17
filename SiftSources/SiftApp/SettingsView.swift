@@ -50,6 +50,17 @@ struct SiftSettings: View {
                 }
                 Text("Hesabı kaldırmak bu Mac’teki önbelleğini ve erişim anahtarını siler. Microsoft hesabındaki postalar silinmez. Microsoft hesabının uygulama izinleri sayfasından verilen izni ayrıca iptal edebilirsin.").font(.caption).foregroundStyle(.secondary)
             }.formStyle(.grouped).tabItem { Label("Gizlilik", systemImage: "hand.raised") }
+            VStack(spacing: 16) {
+                Image(nsImage: NSApplication.shared.applicationIconImage).resizable().frame(width: 96, height: 96)
+                Text("Sift").font(.largeTitle.weight(.semibold))
+                Text("Sürüm \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") · Yapı \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—")")
+                    .foregroundStyle(.secondary)
+                Text("Önemli postalar, tam çentiğinde.")
+                Link("Yayınlanan sürümleri aç", destination: URL(string: "https://github.com/AliGaffarToksoy/Sift/releases")!)
+                Link("Geliştirme ve hata bildirimleri", destination: URL(string: "https://github.com/AliGaffarToksoy/Sift/issues")!)
+                Text("Güncellemeler GitHub’dan elle indirilir. Bu geliştirme sürümünde Outlook kurulumu ve gerçek cihaz kontrolleri devam ediyor.")
+                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }.padding(32).tabItem { Label("Hakkında", systemImage: "info.circle") }
         }.padding(12).frame(width: 640, height: 570)
             .onDisappear { model.save() }
             .onChange(of: model.cache.preferences.notchEnabled) { _, enabled in model.save(); if !enabled { model.notch?.hide() } }

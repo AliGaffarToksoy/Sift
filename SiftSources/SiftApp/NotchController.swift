@@ -9,6 +9,8 @@ import SiftCore
 private final class MailPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+    // AppKit otherwise pushes borderless windows below the menu bar.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 @Observable @MainActor
@@ -25,6 +27,9 @@ final class NotchPresentation {
     private let state = NotchPresentation()
     private weak var model: MailboxModel?
     private var timer: Task<Void, Never>?
+    private var pointerTask: Task<Void, Never>?
+    private var hoverOpened = false
+    private var suppressHoverUntilExit = false
     private var screenObserver: NSObjectProtocol?
     private var hotkey: EventHotKeyRef?
     private var handler: EventHandlerRef?
@@ -40,13 +45,23 @@ final class NotchPresentation {
         panel.level = .statusBar; panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.isMovable = false
-        panel.contentView = NSHostingView(rootView: NotchView(state: state, model: model,
+        let hosting = NSHostingView(rootView: NotchView(state: state, model: model,
             hover: { [weak self] in self?.hover($0) }, expand: { [weak self] in self?.expand() },
-            dismiss: { [weak self] in self?.hide() }).preferredColorScheme(.dark))
+            dismiss: { [weak self] in self?.hide() }).preferredColorScheme(.dark).ignoresSafeArea())
+        hosting.sizingOptions = []
+        panel.contentView = hosting
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.geometry(); self?.resize(animated: false) }
         }
         geometry()
+        // A hidden SwiftUI view cannot receive onHover. Sample only the pointer
+        // position (no event interception or Accessibility permission required).
+        pointerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+                self?.checkPointer()
+            }
+        }
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), { _, _, pointer in
             guard let pointer else { return OSStatus(eventNotHandledErr) }
@@ -69,6 +84,38 @@ final class NotchPresentation {
                             width: right.minX - left.maxX, height: state.topInset)
         }
     }
+    private func checkPointer() {
+        guard let screen else { return }
+        let point = NSEvent.mouseLocation
+        let activation = NotchLayout.activationFrame(screen: screen.frame, visible: screen.visibleFrame,
+                                                     topInset: state.topInset, camera: camera)
+        let inside = activation.contains(point) || (visible && panel.frame.contains(point))
+        if !inside { suppressHoverUntilExit = false }
+        guard !suppressHoverUntilExit else { return }
+        if inside && !visible && model?.cache.preferences.expandOnHover == true {
+            showInbox()
+            hoverOpened = true
+        }
+        if hovering != inside { hover(inside) }
+    }
+    private func showInbox() {
+        guard let model else { return }
+        geometry()
+        state.messages = Array(model.messages.filter { $0.tier >= model.cache.preferences.minimumTier }
+            .sorted { $0.score > $1.score }.prefix(4))
+        state.preview = model.demo
+        state.expanded = true
+        visible = true
+        panel.ignoresMouseEvents = false
+        // Set the frame before ordering the panel to avoid a flash at its old position.
+        if let screen {
+            let collapsed = NotchLayout.activationFrame(screen: screen.frame, visible: screen.visibleFrame,
+                                                       topInset: state.topInset, camera: camera)
+            panel.setFrame(collapsed, display: false)
+        }
+        panel.orderFrontRegardless()
+        resize(animated: true)
+    }
     func notify(_ messages: [MailMessage], preview: Bool = false, userInitiated: Bool = false) {
         guard !messages.isEmpty, let model else { return }
         if !preview && !userInitiated {
@@ -84,6 +131,7 @@ final class NotchPresentation {
             let width = state.hardware ? (camera?.width ?? 180) : 200
             panel.setFrame(NSRect(x: (camera?.midX ?? screen.frame.midX) - width / 2, y: screen.frame.maxY - max(1, state.topInset), width: width, height: max(1, state.topInset)), display: false)
         }
+        hoverOpened = false
         visible = true; panel.ignoresMouseEvents = false
         panel.orderFrontRegardless(); resize(animated: true); scheduleHide()
     }
@@ -92,7 +140,8 @@ final class NotchPresentation {
         if state.messages.isEmpty { hide() } else { resize(animated: true) }
     }
     func hide() {
-        timer?.cancel(); visible = false; hovering = false
+        suppressHoverUntilExit = hovering
+        timer?.cancel(); visible = false; hovering = false; hoverOpened = false
         panel.ignoresMouseEvents = true; panel.orderOut(nil)
         state.messages = []; state.expanded = false
     }
@@ -104,15 +153,12 @@ final class NotchPresentation {
     }
     private func toggle() {
         if visible { hide() }
-        else if let model {
-            let messages = model.messages.filter { $0.tier >= model.cache.preferences.minimumTier }
-            notify(Array(messages.prefix(4)), preview: model.demo, userInitiated: true); expand()
-        }
+        else { showInbox(); scheduleHide() }
     }
     private func scheduleHide() {
         timer?.cancel()
         guard !hovering else { return }
-        let duration = max(3, min(30, model?.cache.preferences.alertDuration ?? 8))
+        let duration = hoverOpened ? 0.45 : max(3, min(30, model?.cache.preferences.alertDuration ?? 8))
         timer = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(duration)) } catch { return }
             self?.hide()
@@ -132,6 +178,8 @@ final class NotchPresentation {
         } else { panel.setFrame(frame, display: true) }
     }
     isolated deinit {
+        pointerTask?.cancel()
+        timer?.cancel()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         if let hotkey { UnregisterEventHotKey(hotkey) }
         if let handler { RemoveEventHandler(handler) }
@@ -207,6 +255,18 @@ private struct NotchView: View {
                         HStack { Text(model.cache.preferences.hidePreview ? "Önemli posta" : next.sender).font(.caption.weight(.semibold)); Spacer(); Text(model.cache.preferences.hidePreview ? "" : next.subject).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                     }
                     if state.preview { Text("Örnek bildirim · Hesabındaki hiçbir postayı değiştirmez").font(.caption2).foregroundStyle(.secondary) }
+                }
+            }
+            if state.messages.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Her şey sakin.").font(.title3.weight(.semibold))
+                    Text(model.cache.accounts.isEmpty ? "Hesabını bağla; önemli postaların burada görünsün." : "Şu anda dikkatini bekleyen önemli bir posta yok.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Button("Sift’i aç") {
+                        NSApp.activate(ignoringOtherApps: true)
+                        NSApp.windows.first(where: { $0.title == "Sift" })?.makeKeyAndOrderFront(nil)
+                        dismiss()
+                    }.buttonStyle(.glass)
                 }
             }
             Spacer(minLength: 0)

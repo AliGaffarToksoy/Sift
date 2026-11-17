@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-$(cat VERSION)}"
 VERSION="${VERSION#v}"
 swift build -c release --arch arm64
 BIN_DIR="$(swift build -c release --arch arm64 --show-bin-path)"
@@ -12,6 +12,8 @@ for bundle in "$BIN_DIR"/*.bundle; do
     [ -d "$bundle" ] || continue
     ditto "$bundle" "$APP/Contents/Resources/$(basename "$bundle")"
 done
+swift Scripts/generate-icon.swift "$PWD/dist/Sift.iconset"
+python3 Scripts/package-icon.py "$PWD/dist/Sift.iconset" "$APP/Contents/Resources/Sift.icns"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set CFBundleVersion ${GITHUB_RUN_NUMBER:-1}" "$APP/Contents/Info.plist"
