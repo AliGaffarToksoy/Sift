@@ -9,9 +9,12 @@
   <key>CFBundleName</key><string>Sift</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleDisplayName</key><string>Sift</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>0.2.0</string>
+  <key>CFBundleIconFile</key><string>Sift</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>NSPrefersDisplaySafeAreaCompatibilityMode</key><false/>
+  <key>NSFocusStatusUsageDescription</key><string>Odak açıkken önemli posta bildirimlerini sessize almak için.</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

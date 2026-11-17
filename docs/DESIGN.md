@@ -50,3 +50,9 @@ Use semantic foreground/background colors, scalable system styles, descriptive l
 ## Design Gallery
 
 The app includes a local gallery of priority, glass, row, chip, and shortcut states. Check its light/dark appearances, keyboard focus, and accessibility settings before release. Screenshots are intentionally left as README placeholders until captured on a Tahoe Mac.
+
+## Outlook and notch continuation
+
+Use NotchLingo's proven geometry strategy: prefer the built-in notched screen, reserve the camera inset, and mount one persistent SwiftUI tree in a nonactivating NSPanel. Use safeAreaInsets and both auxiliary areas, remeasure on screen changes, and use a floating pill on other displays. Hidden panels are ordered out; showing a notification never activates Sift. Camera-safe content begins below the top inset. Peek expands on hover, respects Reduce Motion, and collapses after a configurable interval. Quiet hours and a manual pause prevent interruptions; Focus status is used only when the OS shares it, with its limitation visible in Settings.
+
+Mail stays on quiet solid surfaces, with glass reserved for grouped controls. Every account shows its own connection state. Setup distinguishes a missing Microsoft application registration from account consent. There are no preconfigured personal accounts, passwords, or sample credentials.

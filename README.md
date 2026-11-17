@@ -1,58 +1,61 @@
 # Sift
 
-Sift is a native, local-first macOS mail triage prototype. The current build is a polished **Demo Mode** experience with a ranked sample inbox, reader, design gallery, menu bar peek, explainable heuristic scoring, and macOS CI packaging. It does not yet connect to real mail accounts. The app has no telemetry and the demo contains synthetic Turkish and English messages only.
+A native, local-first Outlook / Microsoft 365 inbox for macOS 26+, with explainable priority ranking and camera-safe notch alerts. SwiftUI + AppKit, Swift 6, no backend, telemetry, or external AI service.
 
-## Preview
+**Status:** Outlook implementation ready for integration testing. Live sign-in requires a Microsoft public-client application registration. Do not describe this build as production-verified until the live-account and hardware checklist below passes.
 
-Screenshots will be added after capture on macOS Tahoe.
+## What works in this version
 
-| Inbox | Reader | Design Gallery |
-|---|---|---|
-| _Screenshot placeholder_ | _Screenshot placeholder_ | _Screenshot placeholder_ |
+- Separate Outlook.com / Microsoft 365 accounts with browser device-code sign-in; tokens stored only in macOS Keychain.
+- Inbox delta synchronization, pagination, deleted/moved-message reconciliation, expired-cursor recovery, bounded read retries and offline cache. Changes and the sync cursor are written together in an atomic local file.
+- Unified inbox, priority, today, probable needs-reply, newsletters, VIP and locally snoozed mailboxes; local search and daily brief.
+- Server-backed archive and mark-read, plain-text replies with a cancellable ten-second send delay, local one-hour snooze and sender preferences.
+- Notch peek and expanded actions, camera-safe geometry derived from NSScreen, external-display fallback, burst grouping, auto-dismiss, Reduce Motion/Transparency support, private previews, threshold and quiet-hour settings. Control–Option–S toggles the panel.
+- Separate Turkish/English sample data, a design gallery and a safe notch preview. Demo actions do not send mail.
 
-## Build and run
+Only the Inbox is synchronized. HTML, attachments, other folders, new-message composition, Gmail/IMAP, local language-model summaries, full triage mode and natural-language search are **not implemented**. The displayed summary is a plain-text excerpt. The current UI is primarily Turkish; full localization remains to be completed.
 
-Requires a Mac with Xcode 27 (or a compatible Xcode containing the macOS 26 SDK) and Swift 6:
+## Download and open — no Xcode needed
+
+Download `Sift-macOS-arm64.dmg` or `.zip` from a successful [Actions run](https://github.com/AliGaffarToksoy/Sift/actions) (GitHub sign-in is needed for workflow artifacts), or from [Releases](https://github.com/AliGaffarToksoy/Sift/releases) after a version tag is published. A pull request artifact is a development build, not a stable release.
+
+Open the DMG and drag Sift to Applications. The app is ad-hoc signed, not notarized by Apple. Approve first launch in System Settings → Privacy & Security; depending on macOS version, Finder → right-click → Open is also available. For a build you trust, `xattr -cr /Applications/Sift.app` removes the download quarantine. Apple Silicon and macOS 26+ are required.
+
+## Connect Outlook
+
+See [the step-by-step setup guide](docs/OUTLOOK-SETUP.md). A maintainer registers Sift once for organizational **and personal** Microsoft accounts, enables public client flows, and sets the repository variable `MICROSOFT_CLIENT_ID`. CI embeds this public identifier in the downloadable app; users then sign in with their own account. The identifier is not an account, password or secret.
+
+Without a bundled identifier, advanced users can enter their own Application (client) ID in Accounts. No private credentials are included in the repository. Organizational policies may require administrator approval or block the device flow.
+
+Sift polls while running, approximately every 60 seconds. Initial sync and cursor recovery do not alert for old messages. Sleep, throttling and network failures can delay mail. macOS Focus is respected only when the system shares its status; otherwise use quiet hours or Pause. Notch preview intentionally bypasses suppression.
+
+## Privacy
+
+Mail content and preferences are stored in a versioned local Application Support cache inside the app sandbox. Access and refresh tokens are separate per-account Keychain items. Plain-text rendering makes no remote-image requests. Only Microsoft identity and Graph endpoints receive authentication/mail traffic. See [Privacy](docs/PRIVACY.md).
+
+Removing an account deletes its cache and Keychain entry on this Mac; it does not delete mail from Microsoft. Revoke application consent separately from your Microsoft account if desired. Ad-hoc upgrades may require Keychain authorization or reconnecting the account.
+
+## Build and verify
+
+A compatible Xcode with the macOS 26+ SDK is recommended for the full test suite:
 
 ```sh
 swift build
-swift run Sift
 swift test
+bash Scripts/package.sh
 ```
 
-The main window opens in Demo Mode. ⌘E archives the selected sample; the toolbar button opens the Design Gallery. Sift also adds a menu bar peek.
+GitHub Actions uses the documented `macos-26` runner, prints the selected toolchain, runs unit tests, then packages an ad-hoc signed app, ZIP, DMG and checksums. Failed tests prevent packaging. Version tags publish release assets. No Xcode project needs to be opened.
 
-## Download
+Core tests cover scoring, Turkish signals, Graph decoding, HTML fallback, account-scoped delta reconciliation, stable identity/snooze preservation, duplicate changes, quiet-hour boundaries, safe Graph links and cache round trips.
 
-Once this project is published, download `Sift-macOS.dmg` or `Sift-macOS.zip` from a tagged GitHub Release. CI ad-hoc signs the app; it is not notarized. On first launch, macOS may block it: in Finder, Control-click (or right-click) `Sift.app`, choose **Open**, then confirm **Open**. Alternatively, after moving the app into Applications, run `xattr -cr /Applications/Sift.app` in Terminal and open it. Only do this for a build you trust.
+## Needs manual verification before a stable release
 
-The Actions workflow also makes the same files available as downloadable artifacts for branch builds.
+- Microsoft sign-in with both Outlook.com and a work/school account, rejection/cancellation, expired refresh tokens, Keychain access after an ad-hoc upgrade, and multiple-account isolation.
+- Large-inbox and incremental synchronization with live Graph, pagination, expired cursors, externally moved/read mail and offline recovery. API failure scenarios currently lack an injected-network integration test suite.
+- Archive/read mutations and real reply delivery; cancel during the ten-second delay; ambiguous send failures must be checked in Sent Items before retrying.
+- Notch positioning and pointer behavior on an M3 Pro MacBook, display scaling, external monitors, full-screen Spaces, Focus sharing, accessibility settings and keyboard navigation.
+- Screenshot review in light/dark mode; screen reader audit. Do not claim pixel-perfect hardware verification from unit tests.
+- No full production claim: attachment support, richer provider coverage, complete localization and signed/notarized distribution remain future work.
 
-## Current scope
-
-- Implemented: three-column demo inbox and reader, priority chips and explanations, search, basic archive action, Design Gallery, menu bar summary, sample data in Turkish and English, scoring tests, sandbox entitlements, macOS build/test/package workflow.
-- Not implemented yet: Gmail/IMAP OAuth and sync, persistent mail cache, Keychain integration, Foundation Models adapter, secure HTML reader, attachments, composer, triage flow, daily brief, cleanup, command palette, notifications, settings, notch panel, app icon, MIME parsing, and their tests. Do not connect a real inbox to this prototype.
-
-## Manual setup for a future Gmail integration
-
-No OAuth setup is needed for Demo Mode. Before enabling Gmail support, a maintainer will need a Google Cloud project, Gmail API enabled, and an OAuth client configured for a desktop app. The app must implement Authorization Code with PKCE, state validation, a loopback callback, and Keychain-only token storage. Gmail synchronization should use incremental `history.list` polling; the Gmail Pub/Sub watch path requires Pub/Sub infrastructure and a delivery endpoint. Do not paste client secrets or refresh tokens into source control.
-
-## CI and publishing
-
-`.github/workflows/build.yml` uses GitHub's `macos-26` hosted runner, prints the selected Xcode version, builds and tests with SwiftPM, then creates an ad-hoc-signed `.app`, `.zip`, and `.dmg`. Tag `vX.Y.Z` to upload the archives to a GitHub Release. GitHub currently lists `macos-26` and Xcode 27 runner images; the image's exact patch version can change over time.
-
-## Needs manual verification
-
-- Build and launch on macOS 26 with Xcode 27. This environment has Swift 6 command-line tools but no Xcode installation, so the macOS SDK build and CI have not been verified here.
-- Confirm SwiftUI Liquid Glass appearance, selection, keyboard navigation, VoiceOver, Reduce Motion, Reduce Transparency, Increased Contrast, and light/dark appearances on Tahoe.
-- Capture real screenshots and inspect menu bar behavior on multiple display scales.
-- Before implementing NotchKit, validate hit testing, panel level/collection behavior, focus behavior, safe-area geometry, resolution changes, full-screen Spaces, and external monitors on hardware. `NSScreen` exposes safe-area and auxiliary corner regions but macOS does not provide a supported generic Dynamic Island abstraction.
-- Review and tighten sandbox entitlements during account integration. Release signing is ad hoc and therefore unsigned by Apple/not notarized.
-
-## Research and design
-
-See [docs/DESIGN.md](docs/DESIGN.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for API research, design tokens, system boundaries, and privacy rules.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+See [Design](docs/DESIGN.md), [Architecture](docs/ARCHITECTURE.md), and [Contributing](CONTRIBUTING.md). MIT license.

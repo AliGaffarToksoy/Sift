@@ -32,3 +32,11 @@ Enable App Sandbox with only outbound network client and Keychain access. WKWebV
 ## Verification boundaries
 
 The repository includes unit coverage for deterministic priority scoring and a CI workflow for macOS build/tests/package creation. MIME parsing, live Gmail/IMAP OAuth, notch hit testing, multi-display geometry, accessibility settings, and visual screenshots require macOS integration testing. Keep these limitations explicit in README until verified on hardware.
+
+## Outlook implementation (November 2026)
+
+The first live provider is Microsoft Graph for Outlook.com and Microsoft 365. A public-client device authorization flow opens Microsoft's browser sign-in; no password or client secret enters Sift. Tokens live in a per-account Keychain item. A maintainer may distribute a public application ID through Info.plist; advanced users can configure their own registration. Delegated User.Read, Mail.ReadWrite, Mail.Send and offline_access permissions are requested. Tenant policies can require administrator approval or prohibit device authorization.
+
+Inbox delta pages and deletions are applied to a versioned local cache together with the final delta cursor. Initial sync and cursor recovery never notify for historical messages. Each account has an independent cursor, token, and local message identity. Failed remote mutations leave local messages intact. Plain-text bodies are requested from Graph; no HTML, images, scripts, or remote tracking resources are rendered. Snooze and sender preferences are local to Sift.
+
+References checked: [device authorization](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code), [message delta](https://learn.microsoft.com/en-us/graph/api/message-delta), [move](https://learn.microsoft.com/en-us/graph/api/message-move), [delegated permissions](https://learn.microsoft.com/en-us/graph/permissions-reference). The system is polled while Sift runs; it cannot receive mail while the process is quit.
